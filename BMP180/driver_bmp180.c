@@ -6,8 +6,6 @@
 #include <linux/uaccess.h>
 #include <linux/delay.h>
 
-
-
 #define DRIVER_NAME "bmp180_driver"
 #define CLASS_NAME "bmp180"
 #define DEVICE_NAME "bmp180"
@@ -22,6 +20,7 @@
 #define BMP180_PRESS_MEAS 0x34
 #define BMP180_E2PROM_DATA_LENGTH 22
 #define DELAY 5
+
 // // IOCTL commands
 #define BMP180_IOCTL_MAGIC 'b'
 #define BMP180_IOCTL_TEMPERATURE _IOR(BMP180_IOCTL_MAGIC,1, int)
@@ -42,7 +41,6 @@ struct bmp180_E2PROM_data {
 	s16 MB, MC, MD;
 };
 
-
 struct bmp180_data {
 	struct i2c_client *client;
 	struct mutex lock;
@@ -51,16 +49,14 @@ struct bmp180_data {
 	u32 raw_temperature;
 	u32 raw_pressure;
 	unsigned char oversampling_setting;
-	u32 last_temp_measurement;
-	s32 B5; /* calculated temperature correction coefficient */
+	s32 B5; 
     s32 B6;
-	unsigned long delay_jiffies;
 };
 
 static s32 bmp180_read_E2PROM(struct i2c_client *client)
 {
     u8 buf[BMP180_E2PROM_DATA_LENGTH];
-	struct bmp180_data *data = i2c_get_clientdata(client); // lay dia chi
+	struct bmp180_data *data = i2c_get_clientdata(client); // access to get data again 
 	struct bmp180_E2PROM_data *cali = &(data->calibration);
 	if (i2c_smbus_read_i2c_block_data(client, BMP180_E2PROM_1_REG, BMP180_E2PROM_DATA_LENGTH,buf) < 0) 
     {
@@ -81,7 +77,10 @@ static s32 bmp180_read_E2PROM(struct i2c_client *client)
 	return 0;
     
 }
-
+/** 
+* Use mutex_clock function to synchronize data access,
+* allowing only one process at a time to prevent race conditions
+*/
 static s32 bmp180_update_raw_temperature(struct bmp180_data *data)
 {
 	u8 buf[2];
@@ -99,8 +98,7 @@ static s32 bmp180_update_raw_temperature(struct bmp180_data *data)
 		goto exit;
 	}
 	data->raw_temperature = buf[0]<<8 | buf[1];
-	data->last_temp_measurement = jiffies;
-	status = 0;
+	status = 0; /* everything ok, return 0 */
 exit:
 	mutex_unlock(&data->lock);
 	return status;
@@ -117,7 +115,7 @@ static s32 bmp180_update_raw_pressure(struct bmp180_data *data)
 		goto exit;
 	}
 
-	msleep(2+(3 << data->oversampling_setting)); // 2+3, 2+6,....
+	msleep(2 + ( 3 << data->oversampling_setting)); // Wait time is adjusted based on the oversampling setting (OSS) value
     
     status = i2c_smbus_read_i2c_block_data(data->client, BMP180_MSB_REG, 3, buf);
 	if(status <0){
@@ -131,7 +129,10 @@ exit:
 	return status;
 }
 
-
+/*
+ * This function starts the temperature measurement and returns the value
+ * in tenth of a degree celsius.
+ */
 static s32 bmp180_get_temperature(struct bmp180_data *data, int *temperature)
 {
     struct bmp180_E2PROM_data *cali = &data->calibration;
@@ -148,8 +149,6 @@ static s32 bmp180_get_temperature(struct bmp180_data *data, int *temperature)
     data->B5 = X1 + X2;
     data -> B6 =data->B5-4000;
 
-
-/* if NULL just update b5. Used only for pressure measurements */
     if (temperature != NULL)
     {
         *temperature = (data->B5 + 8) >> 4;
@@ -159,19 +158,16 @@ exit:
     return status;
 }
 
-static s32 bmp180_get_pressure(struct bmp180_data *data,int *pressure)
+/*
+ * This function starts the pressure measurement and returns the value in Pa.
+ * We should callback "temperature measurement" before starts this function.
+ */
+static s32 bmp180_get_pressure(struct bmp180_data *data, int *pressure)
 {
 	struct bmp180_E2PROM_data *cali = &data->calibration;
 	s32 X1, X2, X3, B3,p;
 	u32 B4, B7;
 	int status;
-	if (data->last_temp_measurement + HZ < jiffies) {
-		status = bmp180_get_temperature(data, NULL);
-		if (status != 0){
-            printk(KERN_ERR "Failed to get temperature value %d\n",status);
-			goto exit;
-        }
-	}
 	status = bmp180_update_raw_pressure(data);
 	if (status != 0){
         printk(KERN_ERR "Failed to update pressure value %d\n",status);
@@ -186,12 +182,12 @@ static s32 bmp180_get_pressure(struct bmp180_data *data,int *pressure)
 	X3 = (X1 + X2 + 2) >> 2;
 	B4 = (cali->AC4 * (u32)(X3 + 32768)) >> 15;
 	B7 = ( (u32)data->raw_pressure - B3 ) * (50000 >> data->oversampling_setting);
-    if (B7 < 0x80000000)  p=(B7*2)/B4;
-    else p=(B7/B4)*2; 
+    if (B7 < 0x80000000)  p=(B7*2)/B4;  
+    else p=(B7/B4)*2; // Avoid overflow by multiplying before division
 	X1 = (p >> 8) * (p >> 8);
 	X1 = (X1 * 3038) >> 16;
 	X2 = ( -7375 * p) >> 16;
-    p+= (X1 + X2 + 3791)>> 4;
+    p += (X1 + X2 + 3791)>> 4;
     if (pressure != NULL)
 	{    
         *pressure=p;
@@ -201,15 +197,19 @@ exit:
 	return status;
 }
 
-static s32 bmp180_get_altitude(struct bmp180_data *data, int *altitude)
+/*
+ * This function starts the altitude measurement and returns the value in m.
+ */
+static s32 bmp180_get_altitude(struct bmp180_data *data, unsigned int *altitude)
 {
     const s32 P0=101325;
     if(!data)
         return -1;
-    int P=0;
-    if (bmp180_get_pressure(data, &P) != 0)
+    s32 P=0;
+    if (bmp180_get_pressure(data, &P)!= 0)
         return -EIO;
-    *altitude = ( P0-P )*843 /10000;
+/*this is a simplified linearized version of the barometric altitude formula */
+    *altitude = (P0-P)*843/10000;
     return 0;
 }
 
@@ -225,6 +225,7 @@ static long bmp180_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                 return -EFAULT;
             break;
         case BMP180_IOCTL_PRESSURE:
+            bmp180_get_temperature(bmp_data, NULL); // Update temperature value first before other calculations
             bmp180_get_pressure(bmp_data, &data);
             if (copy_to_user((int __user *)arg, &data, sizeof(data)))
                 return -EFAULT;
@@ -238,6 +239,7 @@ static long bmp180_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             pr_info("Set oversampling to %d\n", oss);
             break;
         case BMP180_IOCTL_ALTITUDE:
+            bmp180_get_temperature(bmp_data, NULL);
             bmp180_get_altitude(bmp_data,&data);
             if (copy_to_user((int __user *)arg, &data, sizeof(data)))
                 return -EFAULT;
@@ -260,7 +262,6 @@ static int bmp180_release(struct inode *inodep, struct file *filep)
     return 0;
 }
 
-
 static struct file_operations fops= {
     .open = bmp180_open,
     .owner = THIS_MODULE,
@@ -271,20 +272,20 @@ static int bmp180_probe(struct i2c_client *client)
 {
 
     struct bmp180_data *data;
-
+	
+/*dynamic memory allocation*/
     data = devm_kzalloc(&client->dev, sizeof(struct bmp180_data), GFP_KERNEL);
     if (!data)
         return -ENOMEM;
     data->client = client;
 
     mutex_init(&data->lock);
-	data->last_temp_measurement = 0;
     data->oversampling_setting = 3;
-	data->delay_jiffies = msecs_to_jiffies(200);
-
+	
+/*Link my data to bmp180_data by storing the pointer (*data) in i2c_client to store data (temperature, pressure values...) initially and access it again later*/
     i2c_set_clientdata(client, data);
 
-    int chip_id = i2c_smbus_read_byte_data(client, BMP180_CHIP_ID);
+    int chip_id = i2c_smbus_read_byte_data(client, BMP180_CHIP_ID); // check chip ID
     if (chip_id != 0x55) 
     {
         pr_err("Invalid chip ID: 0x%x\n", chip_id);
@@ -319,9 +320,17 @@ static int bmp180_probe(struct i2c_client *client)
     }
     pr_info("BMP180 driver installed\n");
     bmp180_client = client;
+	
     // call read_E2PROM at first
-    if (bmp180_read_E2PROM(client) < 0)
+    if (bmp180_read_E2PROM(client) < 0) 
+    {
+        device_destroy(bmp180_class, MKDEV(major_number, 0));
+        class_unregister(bmp180_class);
+        class_destroy(bmp180_class);
+        unregister_chrdev(major_number, DEVICE_NAME);
         return -EIO;
+    }
+    
     return 0;
 }
 
@@ -334,7 +343,7 @@ static void bmp180_remove(struct i2c_client *client)
     pr_info( "BMP180 driver removed\n");
 }
 
-// Bảng định danh giúp kernel load driver khi gặp node
+
 static const struct of_device_id bmp180_of_match[] = {
     { .compatible = "bosch,bmp180" },
     { },
@@ -352,10 +361,6 @@ static struct i2c_driver bmp180_driver = {
     .remove = bmp180_remove,
 };
 
-
-
-
-
 static int __init my_init(void)
 {
     pr_info( "Initializing BMP180 driver\n");
@@ -372,4 +377,5 @@ module_init(my_init);
 module_exit(my_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("A driver to read and write some registers of a BMP180 Sensor");
+MODULE_AUTHOR("NHOM_GIANG_DUY_DANH_DO");
+MODULE_DESCRIPTION("A driver to read and write some registers and use some functions of a BMP180 Sensor");

@@ -24,7 +24,7 @@ int main() {
         perror("Failed to open the device");
         return errno;
     }
-
+// choose your oversampling_setting 
     if (ioctl(fd, BMP180_IOCTL_SET_OSS, &oss) < 0) {
         perror("Failed to set oss data");
         return errno;

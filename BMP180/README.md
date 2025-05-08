@@ -63,15 +63,15 @@ dmesg | tail
 gcc test.c -o run
 sudo ./run
 ```
-7. **gở cài đặt module**
+7. **GGở cài đặt module**
 ```js
 sudo rmmod driver_bmp180
 ```
 
 ## Ghi chú
-Địa chỉ I2C mặc định của BMP180 là 0x77.
+Địa chỉ I2C mặc định của BMP180 là `0x77`.
 
-Driver sử dụng thông tin hiệu chỉnh (calibration data) từ cảm biến theo hướng dẫn trong datasheet BMP180.
+Driver sử dụng thông tin hiệu chỉnh (calibration data) từ cảm biến theo hướng dẫn trong **datasheet BMP180**.
 
 Cần đảm bảo thiết bị BMP180 đã được kết nối đúng với bus I2C.
 

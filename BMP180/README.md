@@ -63,9 +63,10 @@ dmesg | tail
 gcc test.c -o run
 sudo ./run
 ```
-7. **Gở cài đặt module**
+7. **Gở cài đặt module và dọn dẹp file**
 ```js
 sudo rmmod driver_bmp180
+make clean
 ```
 
 ## Ghi chú

@@ -63,7 +63,7 @@ dmesg | tail
 gcc test.c -o run
 sudo ./run
 ```
-7. **GGở cài đặt module**
+7. **Gở cài đặt module**
 ```js
 sudo rmmod driver_bmp180
 ```

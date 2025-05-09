@@ -1,16 +1,34 @@
 # Module cảm biến áp suất BMP180
+```js
+Nguyễn Trường Giang - MSSV: 22146298
+Huỳnh Tấn Hà Duy - MSSV: 22146284
+Nguyễn Công Danh - MSSV: 22146280
+Nguyễn Ngọc Độ - MSSV: 22146294
+```
 ## Giới thiệu
 Đây là source code driver cho module cảm biến áp suất và nhiệt độ BMP180, giao tiếp thông qua giao thức I2C. Driver cho phép:
 
 - Đọc và tính toán dữ liệu nhiệt độ, áp suất, và độ cao so với mực nước biển.
 
-- Giao tiếp với lớp user space và cho phép người dùng cấu hình chế độ đo và tần số lấy mẫu.
-## Tính năng
+- Giao tiếp với lớp user space và cho phép người dùng chọn chế độ đo và tần số lấy mẫu.
+## Thông tin thiết bị
+- Supply voltage: 1.8v - 3.6v
+  
+- BMP180 I2C address `0x77`
+
+- Range: 30,000Pa..110,000Pa at 0°C..+65°C
+
+- Typ. resolution: 1Pa / 0.1°C
+
+- Typ. Absolute accuracy: ±100Pa / ±1.0°C
+
+- Typ. relative accuracy: ±12Pa / ± 1.0 m
+## Tính năng driver
 - Tạo character device để giao tiếp với cảm biến BMP180.
 
 - Hỗ trợ đọc dữ liệu với các mức oversampling_setting (OSS) khác nhau.
 
-- In thông tin cảm biến (id_chip, major_number) trong kernel log.
+- Đọc ID chip, đọc và tính toán nhiệt độ ( đơn vị °C ), đọc và tính toán áp suất khí quyển ( đơn vị Pa ), tính toán độ cao so với mặt nước biển ( đơn vị m ).
 
 - Giao tiếp với user space để:
 
@@ -19,12 +37,7 @@
   - Chọn chế độ đo: nhiệt độ / áp suất / độ cao.
 
   - Hiển thị kết quả ra màn hình.
-
-## Yêu cầu hệ thống
-- Raspberry Pi với bus I2C đã được bật và cấu hình.
-
-- Cảm biến áp suất BMP180 kết nối với Raspberry Pi.
-
+    
 ## Hướng dẫn sử dụng
 1. **Kiểm tra cảm biến đã được kết nối và nhận diện trên hệ thống hay chưa**
 ```js
@@ -48,7 +61,6 @@ bmp180@77 {
                reg = <0x77>;
 };
 ```
-
 4. **Biên dịch và cài đặt module**
 ```js
 make
@@ -69,12 +81,18 @@ sudo rmmod driver_bmp180
 make clean
 ```
 
-## Ghi chú
-Địa chỉ I2C mặc định của BMP180 là `0x77`.
+## Khuyến nghị
+- Driver sử dụng thông tin hiệu chỉnh (calibration data) từ cảm biến theo hướng dẫn trong **datasheet BMP180**.
 
-Driver sử dụng thông tin hiệu chỉnh (calibration data) từ cảm biến theo hướng dẫn trong **datasheet BMP180**.
+- Việc đo áp suất khí quyển phụ thuộc vào nhiệt độ môi trường xung quanh. Tránh đặt cảm biến BMP180 trước nguồn nhiệt.
 
-Cần đảm bảo thiết bị BMP180 đã được kết nối đúng với bus I2C.
+- Không để BMP180 tiếp xúc với luồng gió từ quạt, vì điều này có thể dẫn đến kết quả đo không ổn định.
+
+- Cảm biến nhạy với độ ẩm và không được khuyến nghị tiếp xúc trực tiếp với nước.
+
+- BMP180 nhạy với ánh sáng. Không để cảm biến tiếp xúc với ánh sáng trực tiếp.
+
+- Không vượt quá điện áp cung cấp cho cảm biến.
 
 # Tài liệu tham khảo
 [Datasheet BMP180](https://cdn-shop.adafruit.com/datasheets/BST-BMP180-DS000-09.pdf)

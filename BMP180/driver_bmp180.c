@@ -348,9 +348,6 @@ static const struct of_device_id bmp180_of_match[] = {
     { .compatible = "bosch,bmp180" },
     { },
 };
-MODULE_DEVICE_TABLE(of, bmp180_of_match);
-
-
 static struct i2c_driver bmp180_driver = {  
     .driver = {
         .name = DRIVER_NAME,
